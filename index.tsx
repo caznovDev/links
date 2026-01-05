@@ -1,6 +1,6 @@
+
 import React, { useState, useRef, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
-import { GoogleGenAI, Type } from "@google/genai";
 import { 
   Video, 
   Upload, 
@@ -40,49 +40,71 @@ const CineFetch: React.FC = () => {
     setIsProcessing(true);
     setError(null);
 
+    // Artificial short delay for UX smoothness
+    await new Promise(resolve => setTimeout(resolve, 600));
+
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Analyze the following text and extract all video URLs. 
-        Identify the platform (YouTube, Vimeo, Twitch, DailyMotion, or Direct Link/File). 
-        Include a tiny snippet of the context where the link was found.
+      const patterns = [
+        {
+          name: 'YouTube',
+          regex: /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/gi
+        },
+        {
+          name: 'Vimeo',
+          regex: /(?:https?:\/\/)?(?:www\.)?(?:vimeo\.com\/|player\.vimeo\.com\/video\/)(\d+)/gi
+        },
+        {
+          name: 'Twitch',
+          regex: /(?:https?:\/\/)?(?:www\.)?(?:twitch\.tv\/)([a-z0-9_]+)/gi
+        },
+        {
+          name: 'DailyMotion',
+          regex: /(?:https?:\/\/)?(?:www\.)?(?:dailymotion\.com\/video\/|dai\.ly\/)([a-z0-9]+)/gi
+        },
+        {
+          name: 'Direct Link',
+          regex: /https?:\/\/[^\s"']+?\.(?:mp4|webm|ogg|mov|m4v|m3u8)(?:\?[^\s"']+)?/gi
+        }
+      ];
+
+      const foundLinks: ExtractedLink[] = [];
+      const seenUrls = new Set<string>();
+
+      patterns.forEach(p => {
+        let match;
+        // Reset lastIndex for global regex
+        p.regex.lastIndex = 0;
         
-        TEXT TO ANALYZE:
-        ${inputText}`,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              links: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    url: { type: Type.STRING },
-                    platform: { type: Type.STRING },
-                    context: { type: Type.STRING }
-                  },
-                  required: ["url", "platform"]
-                }
-              }
-            },
-            required: ["links"]
+        while ((match = p.regex.exec(inputText)) !== null) {
+          const url = match[0];
+          if (!seenUrls.has(url)) {
+            seenUrls.add(url);
+            
+            // Extract context: 40 chars before and after
+            const start = Math.max(0, match.index - 40);
+            const end = Math.min(inputText.length, match.index + url.length + 40);
+            let context = inputText.substring(start, end).replace(/\n/g, ' ');
+            
+            if (start > 0) context = '...' + context;
+            if (end < inputText.length) context = context + '...';
+
+            foundLinks.push({
+              url,
+              platform: p.name,
+              context: context.trim()
+            });
           }
         }
       });
 
-      const data = JSON.parse(response.text || '{"links": []}');
-      setResults(data.links);
+      setResults(foundLinks);
       
-      if (data.links.length === 0) {
+      if (foundLinks.length === 0) {
         setError("No video links were found in the provided content.");
       }
     } catch (err: any) {
       console.error("Extraction error:", err);
-      setError("Failed to extract links. Please check your input or try again.");
+      setError("Failed to process content. Please check your input.");
     } finally {
       setIsProcessing(false);
     }
@@ -154,12 +176,12 @@ const CineFetch: React.FC = () => {
       {/* Header */}
       <header className="w-full flex justify-between items-center mb-12">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+          <div className="w-12 h-12 bg-gradient-to-br from-indigo-600 to-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <Video className="text-white w-7 h-7" />
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">CineFetch</h1>
-            <p className="text-xs text-zinc-500 font-medium tracking-widest uppercase">AI Video Link Extractor</p>
+            <p className="text-xs text-zinc-500 font-medium tracking-widest uppercase">Instant Link Extractor</p>
           </div>
         </div>
         <button 
@@ -179,7 +201,7 @@ const CineFetch: React.FC = () => {
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
-            className={`relative flex flex-col gap-4 p-6 rounded-2xl glass transition-all duration-300 ${dragActive ? 'border-purple-500/50 bg-purple-500/5' : 'border-white/10'}`}
+            className={`relative flex flex-col gap-4 p-6 rounded-2xl glass transition-all duration-300 ${dragActive ? 'border-indigo-500/50 bg-indigo-500/5' : 'border-white/10'}`}
           >
             <div className="flex justify-between items-center">
               <label className="text-sm font-semibold text-zinc-400 flex items-center gap-2">
@@ -188,7 +210,7 @@ const CineFetch: React.FC = () => {
               </label>
               <button 
                 onClick={() => fileInputRef.current?.click()}
-                className="text-xs font-medium text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition-colors"
+                className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-colors"
               >
                 <Upload size={14} />
                 Upload File
@@ -203,8 +225,8 @@ const CineFetch: React.FC = () => {
             </div>
 
             <textarea
-              className="w-full h-[400px] bg-black/20 border border-white/5 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all resize-none custom-scrollbar"
-              placeholder="Paste text containing video links, HTML code, or server logs here..."
+              className="w-full h-[400px] bg-black/20 border border-white/5 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all resize-none custom-scrollbar"
+              placeholder="Paste text, HTML code, or server logs here..."
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
             />
@@ -212,12 +234,12 @@ const CineFetch: React.FC = () => {
             <button
               onClick={extractLinks}
               disabled={isProcessing || !inputText.trim()}
-              className="w-full py-4 bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-white shadow-xl shadow-purple-900/20 transition-all flex items-center justify-center gap-2 group"
+              className="w-full py-4 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-white shadow-xl shadow-indigo-900/20 transition-all flex items-center justify-center gap-2 group"
             >
               {isProcessing ? (
                 <>
                   <Loader2 className="animate-spin" size={20} />
-                  AI Scanning...
+                  Processing...
                 </>
               ) : (
                 <>
@@ -241,7 +263,7 @@ const CineFetch: React.FC = () => {
           <div className="flex justify-between items-center px-2">
             <h2 className="text-sm font-semibold text-zinc-400 flex items-center gap-2">
               <CheckCircle2 size={16} className="text-emerald-500" />
-              Results Found ({results.length})
+              Links Extracted ({results.length})
             </h2>
             {results.length > 0 && (
               <div className="flex gap-4">
@@ -268,7 +290,7 @@ const CineFetch: React.FC = () => {
               <div className="h-full flex flex-col items-center justify-center text-center p-8 border-2 border-dashed border-white/5 rounded-2xl opacity-50">
                 <Video size={48} className="mb-4 text-zinc-700" />
                 <p className="text-sm font-medium">Extracted links will appear here</p>
-                <p className="text-xs text-zinc-600 mt-1">Ready for your first extraction?</p>
+                <p className="text-xs text-zinc-600 mt-1">Paste content on the left to begin</p>
               </div>
             )}
 
@@ -283,7 +305,7 @@ const CineFetch: React.FC = () => {
             {results.map((item, idx) => (
               <div 
                 key={idx} 
-                className="group p-4 glass rounded-xl border-white/5 hover:border-purple-500/30 transition-all hover:bg-white/[0.05]"
+                className="group p-4 glass rounded-xl border-white/5 hover:border-indigo-500/30 transition-all hover:bg-white/[0.05]"
               >
                 <div className="flex justify-between items-start gap-3 mb-2">
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
@@ -330,8 +352,8 @@ const CineFetch: React.FC = () => {
       {/* Footer info */}
       <footer className="mt-auto pt-12 pb-4 text-center">
         <p className="text-xs text-zinc-600">
-          Powered by <span className="text-zinc-400 font-semibold">Gemini 3 Pro</span> &bull; 
-          Secure & Private Link Extraction
+          Powered by <span className="text-zinc-400 font-semibold">CineFetch Core</span> &bull; 
+          Local & Private Link Extraction
         </p>
       </footer>
     </div>
